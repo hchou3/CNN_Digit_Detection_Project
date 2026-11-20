@@ -1,2 +1,20 @@
-input_images/train
-input_images/test
+data/
+*.tar.gz
+*.mat
+*.npz
+
+output/
+
+# Secrets and tokens
+.env
+kaggle.json
+*.token
+
+# Python
+__pycache__/
+*.pyc
+
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
