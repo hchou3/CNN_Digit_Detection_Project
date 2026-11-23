@@ -3,6 +3,7 @@ import time
  
 import torch
 import torch.nn as nn
+from torchvision.models import vgg16
  
 NUM_CLASSES = 11  # digits 0-9 and background (10)
  
@@ -69,22 +70,90 @@ def count_parameters(model):
         int: number of trainable parameters.
     """
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
- 
- 
-if __name__ == "__main__":
-    model = ModelA()
+
+def load_vgg16(pretrained):
+    """Builds torchvision's VGG16, with or without ImageNet weights.
+
+    Without pretrained weights nothing is downloaded, so run.py can build the
+    model and then load our own trained weights from a file.
+
+    Args:
+        pretrained (bool): load ImageNet weights (needs internet the first time).
+
+    Returns:
+        nn.Module: torchvision VGG16.
+    """
+    if not pretrained:
+        return vgg16()
+
+    return vgg16(pretrained=True)
+
+
+class ModelB(nn.Module):
+    """VGG16 convolution layers with a new small head for 64x64 crops.
+
+    64x64 -> VGG16 features (13 conv layers, 5 pools) -> 2x2x512
+          -> global average pool -> 512 -> 256 -> dropout -> 11 classes
+
+    Args:
+        pretrained (bool): start from ImageNet weights (True for training).
+        hidden (int): units in the hidden layer of the head.
+        dropout (float): dropout probability before the last layer.
+    """
+
+    def __init__(self, pretrained=False, hidden=256, dropout=0.5):
+        super(ModelB, self).__init__()
+        vgg = load_vgg16(pretrained)
+        self.features = vgg.features
+        self.pool = nn.AdaptiveAvgPool2d(1)
+        self.head = nn.Sequential(
+            nn.Linear(512, hidden),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout),
+            nn.Linear(hidden, NUM_CLASSES),
+        )
+
+    def forward(self, x):
+        x = self.features(x)        # (N, 512, 2, 2) for 64x64 input
+        x = self.pool(x)            # (N, 512, 1, 1)
+        x = torch.flatten(x, 1)     # (N, 512)
+        return self.head(x)         # (N, 11) class scores
+
+    def freeze_features(self):
+        """Stage 1: keep all VGG16 convolution weights fixed, train only the head."""
+        for p in self.features.parameters():
+            p.requires_grad = False
+
+    def unfreeze_last_block(self):
+        """Stage 2: also train the last convolution block (layers 24-30 of features)."""
+        for p in self.features[24:].parameters():
+            p.requires_grad = True
+
+
+def check_model(model, size):
     model.eval()
     print("parameters:", count_parameters(model))
- 
-    batch = torch.randn(4, 3, 32, 32)
+
     with torch.no_grad():
-        out = model(batch)
+        out = model(torch.randn(4, 3, size, size))
     print("output shape:", tuple(out.shape))
- 
-    # Rough CPU speed: one forward pass on 1000 crops
-    batch = torch.randn(1000, 3, 32, 32)
+
+    batch = torch.randn(200, 3, size, size)
     with torch.no_grad():
         start = time.time()
         model(batch)
-        seconds = time.time() - start
+        seconds = (time.time() - start) * 5
     print("CPU: {:.2f} s per 1000 crops".format(seconds))
+
+ 
+if __name__ == "__main__":
+    print("Model A")
+    check_model(ModelA(), 32)
+
+    print("Model B")
+    model_b = ModelB(pretrained=False)
+    check_model(model_b, 64)
+    model_b.freeze_features()
+    print("trainable after freeze_features:", count_parameters(model_b))
+    model_b.unfreeze_last_block()
+    print("trainable after unfreeze_last_block:", count_parameters(model_b))
