@@ -99,16 +99,18 @@ def main(args):
     best_val_loss, best_epoch, bad_epochs = float("inf"), 0, 0
     for epoch in range(1, args.epochs + 1):
         start = time.time()
+
         lr = optimizer.param_groups[0]["lr"]
         train_loss, train_acc = run_epoch(model, train_loader, loss_fn, device, optimizer)
         val_loss, val_acc = run_epoch(model, val_loader, loss_fn, device)
-        # Test is logged for the training curves only, never used to make decisions
+
         test_loss, test_acc = run_epoch(model, test_loader, loss_fn, device)
         seconds = time.time() - start
 
         print("epoch {}  lr {:.4g}  train_loss {:.4f}  train_acc {:.4f}  val_loss {:.4f}  "
               "val_acc {:.4f}  test_acc {:.4f}  {:.0f}s".format(
                   epoch, lr, train_loss, train_acc, val_loss, val_acc, test_acc, seconds))
+        
         with open(history_path, "a", newline="") as f:
             csv.writer(f).writerow([epoch, lr, train_loss, train_acc, val_loss, val_acc,
                                     test_loss, test_acc, round(seconds, 1)])
