@@ -1,0 +1,2 @@
+run,model,lr,batch_size,best_epoch,best_val_loss,parameters
+a_lr0.01_bs128,a,0.01,128,30,0.124,288875
