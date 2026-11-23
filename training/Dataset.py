@@ -7,6 +7,15 @@ import torch
 from torch.utils.data import Dataset
 from preprocess.directories import PROCESSED_DIR, DEBUG_DIR
 
+IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+
+
+def normalize_imagenet(crop):
+    rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+    rgb = (rgb - IMAGENET_MEAN) / IMAGENET_STD
+    return torch.from_numpy(np.ascontiguousarray(rgb.transpose(2, 0, 1)))
+
 def normalize_crop(crop):
         """Converts a BGR uint8 crop into a normalized float tensor.
 
@@ -53,10 +62,12 @@ def augment(crop, max_angle=30, max_shift=2, max_noise=20):
         return np.clip(out, 0, 255).astype(np.uint8)
 
 class DigitDataset(Dataset):
-    def __init__(self, path, train=False):
+    def __init__(self, path, train=False, size=32, norm="crop"):
         data = np.load(path)
         self.X, self.y = data["X"], data["y"]
         self.train = train
+        self.size = size
+        self.norm = norm
 
     def __len__(self):
         return len(self.y)
@@ -65,7 +76,10 @@ class DigitDataset(Dataset):
         crop = self.X[index]
         if self.train:
             crop = augment(crop)
-
+        if self.size != crop.shape[0]:
+            crop = cv2.resize(crop, (self.size, self.size), interpolation=cv2.INTER_LINEAR)
+        if self.norm == "imagenet":
+            return normalize_imagenet(crop), int(self.y[index])
         return normalize_crop(crop), int(self.y[index])
 
 # Helpers
