@@ -85,8 +85,7 @@ def main(args):
     optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay=5e-4)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.1, patience=3)
 
-    run_name = "{}_lr{}_bs{}".format(args.model, args.lr, args.batch_size)
-    os.makedirs(os.path.join(args.out_dir, "history"), exist_ok=True)
+    run_name = "{}_lr{}_bs{}_ep{}".format(args.model, args.lr, args.batch_size, args.epochs)    os.makedirs(os.path.join(args.out_dir, "history"), exist_ok=True)
     os.makedirs(args.weights_dir, exist_ok=True)
     history_path = os.path.join(args.out_dir, "history", run_name + ".csv")
     weights_path = os.path.join(args.weights_dir, run_name + ".pt")

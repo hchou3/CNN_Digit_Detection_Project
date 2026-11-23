@@ -1,3 +1,7 @@
+"""
+Charts and Graphs produced on Kaggle
+"""
+
 import csv
 import os
 import time
