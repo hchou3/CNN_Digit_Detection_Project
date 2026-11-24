@@ -125,7 +125,11 @@ def main(args):
     optimizer = make_optimizer(model, args.lr, feature_lr_factor)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.1, patience=3)
 
-    run_name = "{}_lr{}_bs{}_ep{}".format(args.model, args.lr, args.batch_size, args.epochs)
+    model_name = "CustomCNN" if args.model == "a" else "VGG16"
+    run_name = "{}-{}-Epochs".format(model_name, args.epochs)
+    if args.freeze_epochs > 0:
+        run_name += "-Freeze-{}".format(args.freeze_epochs)
+        
     os.makedirs(os.path.join(args.out_dir, "history"), exist_ok=True)
     os.makedirs(args.weights_dir, exist_ok=True)
     history_path = os.path.join(args.out_dir, "history", run_name + ".csv")
