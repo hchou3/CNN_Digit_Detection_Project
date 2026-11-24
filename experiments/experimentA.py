@@ -1,7 +1,11 @@
 """
-Charts and Graphs produced on Kaggle
-"""
+Charts and scores for Model A or Model B, produced on Kaggle.
 
+Example usage:
+    python -m experiments.experiment --model a --run a_lr0.01_bs128_ep50
+    python -m experiments.experiment --model b --run b_lr0.01_bs128_ep30
+"""
+import argparse
 import csv
 import os
 import time
@@ -15,16 +19,14 @@ from sklearn.metrics import confusion_matrix, f1_score, precision_recall_fscore_
 from torch.utils.data import DataLoader
 
 from training.Dataset import DigitDataset
-from training.models import ModelA
-
-RUN_NAME = "a_lr0.01_bs128"
-HISTORY_PATH = os.path.join("experiments", "results", "history", RUN_NAME + ".csv")
-WEIGHTS_PATH = os.path.join("weights", RUN_NAME + ".pt")
-TEST_PATH = os.path.join("data", "processed", "test.npz")
-CHART_DIR = os.path.join("experiments", "results", "charts")
-TABLE_DIR = os.path.join("experiments", "results", "tables")
+from training.models import ModelA, ModelB
 
 CLASS_NAMES = [str(d) for d in range(10)] + ["bg"]
+
+MODEL_SETTINGS = {
+    "a": (ModelA, 32, "crop"),
+    "b": (ModelB, 64, "imagenet"),
+}
 
 
 def read_history(path):
@@ -33,7 +35,7 @@ def read_history(path):
     return {key: np.array([float(r[key]) for r in rows]) for key in rows[0]}
 
 
-def plot_curves(history, filename):
+def plot_curves(history, title, out_path):
     epochs = history["epoch"]
     fig, axes = plt.subplots(1, 2, figsize=(11, 4))
 
@@ -41,22 +43,23 @@ def plot_curves(history, filename):
         axes[0].plot(epochs, 1 - history[split + "_acc"], label=split)
         axes[1].plot(epochs, history[split + "_loss"], label=split)
 
-    axes[0].set_title("Model A error")
+    axes[0].set_title(title + " error")
     axes[0].set_xlabel("epoch")
     axes[0].set_ylabel("error (1 - accuracy)")
     axes[0].legend()
-    axes[1].set_title("Model A loss")
+    axes[1].set_title(title + " loss")
     axes[1].set_xlabel("epoch")
     axes[1].set_ylabel("cross-entropy loss")
     axes[1].legend()
 
     fig.tight_layout()
-    fig.savefig(os.path.join(CHART_DIR, filename), dpi=120)
+    fig.savefig(out_path, dpi=120)
     plt.close(fig)
 
 
-def predict(model, path, batch_size=512):
-    loader = DataLoader(DigitDataset(path, train=False), batch_size=batch_size, shuffle=False)
+def predict(model, path, size, norm, batch_size=256):
+    dataset = DigitDataset(path, train=False, size=size, norm=norm)
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
     model.eval()
 
     y_true, y_pred, seconds = [], [], 0.0
@@ -70,7 +73,7 @@ def predict(model, path, batch_size=512):
     return np.concatenate(y_true), np.concatenate(y_pred), seconds
 
 
-def plot_confusion(y_true, y_pred, filename):
+def plot_confusion(y_true, y_pred, title, out_path):
     cm = confusion_matrix(y_true, y_pred, labels=list(range(11)))
     cm_norm = cm / cm.sum(axis=1, keepdims=True)
 
@@ -90,18 +93,18 @@ def plot_confusion(y_true, y_pred, filename):
     ax.set_yticklabels(CLASS_NAMES)
     ax.set_xlabel("predicted")
     ax.set_ylabel("true")
-    ax.set_title("Model A test confusion matrix (row normalized)")
+    ax.set_title(title + " test confusion matrix (row normalized)")
 
     fig.tight_layout()
-    fig.savefig(os.path.join(CHART_DIR, filename), dpi=120)
+    fig.savefig(out_path, dpi=120)
     plt.close(fig)
 
 
-def save_scores(y_true, y_pred, filename): 
+def save_scores(y_true, y_pred, out_path):
     precision, recall, f1, support = precision_recall_fscore_support(
         y_true, y_pred, labels=list(range(11)), zero_division=0)
 
-    with open(os.path.join(TABLE_DIR, filename), "w", newline="") as f:
+    with open(out_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["class", "precision", "recall", "f1", "count"])
         for i in range(11):
@@ -110,22 +113,31 @@ def save_scores(y_true, y_pred, filename):
 
 
 if __name__ == "__main__":
-    os.makedirs(CHART_DIR, exist_ok=True)
-    os.makedirs(TABLE_DIR, exist_ok=True)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model", default="a", choices=list(MODEL_SETTINGS))
+    parser.add_argument("--run", required=True)
+    parser.add_argument("--history-dir", default=os.path.join("experiments", "results", "history"))
+    parser.add_argument("--weights-dir", default="weights")
+    parser.add_argument("--test", default=os.path.join("data", "processed", "test.npz"))
+    parser.add_argument("--out-dir", default=os.path.join("experiments", "results"))
+    args = parser.parse_args()
+
+    model_class, size, norm = MODEL_SETTINGS[args.model]
+    title = "Model " + args.model.upper()
+    os.makedirs(args.out_dir, exist_ok=True)
 
     # Training curves
-    history = read_history(HISTORY_PATH)
-    plot_curves(history, "modelA_curves.png")
-    print("saved modelA_curves.png")
+    history = read_history(os.path.join(args.history_dir, args.run + ".csv"))
+    plot_curves(history, title, os.path.join(args.out_dir, args.run + "_curves.png"))
 
     # Test predictions on CPU
-    model = ModelA()
-    model.load_state_dict(torch.load(WEIGHTS_PATH, map_location="cpu"))
-    y_true, y_pred, seconds = predict(model, TEST_PATH)
+    model = model_class()
+    model.load_state_dict(torch.load(os.path.join(args.weights_dir, args.run + ".pt"), map_location="cpu"))
+    y_true, y_pred, seconds = predict(model, args.test, size, norm)
 
-    plot_confusion(y_true, y_pred, "modelA_confusion.png")
-    save_scores(y_true, y_pred, "modelA_test_scores.csv")
-    print("saved modelA_confusion.png and modelA_test_scores.csv")
+    plot_confusion(y_true, y_pred, title, os.path.join(args.out_dir, args.run + "_confusion.png"))
+    save_scores(y_true, y_pred, os.path.join(args.out_dir, args.run + "_test_scores.csv"))
+    print("saved", args.run + "_curves.png,", args.run + "_confusion.png,", args.run + "_test_scores.csv")
 
     # Summary scores
     digits = y_true < 10
